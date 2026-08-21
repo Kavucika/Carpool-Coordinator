@@ -6,6 +6,7 @@ The application includes a deployed FastAPI backend and an installable Android b
 
 ## Live Demo
 
+- **Vercel:** https://carpool-coordinator-bay.vercel.app
 - **Backend API:** https://carpool-coordinator-api.onrender.com
 - **Swagger API Documentation:** https://carpool-coordinator-api.onrender.com/docs
 - **Android APK:** https://expo.dev/accounts/kavucika/projects/carpool-app/builds/e4d6a1fb-cc53-451e-9e4c-392627e09cd4
