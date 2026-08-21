@@ -12,6 +12,9 @@ import {
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+
+const API_URL = 'https://carpool-coordinator-api.onrender.com';
+
 import { canLogin, findUser, registerUser } from '../../services/authLogic';
 
 type JoinRequest = {
@@ -63,7 +66,7 @@ export default function HomeScreen() {
   const [showRejectedFor, setShowRejectedFor] = useState<number | null>(null);
   const fetchRides = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/rides');
+      const res = await fetch(`${API_URL}/rides`);
       const data = await res.json();
       setRides(data);
     } catch (err) {
@@ -72,7 +75,7 @@ export default function HomeScreen() {
   };
   const fetchMyRides = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/rides');
+      const res = await fetch(`${API_URL}/rides`);
       const data = await res.json();
       const myRides = data.filter((ride: Ride) => ride.driver === name);
       setRides(myRides);
@@ -370,7 +373,7 @@ export default function HomeScreen() {
             // prefer selectedDate/selectedTime if chosen, fallback to typed time string
             const timeVal = selectedDate && selectedTime ? `${selectedDate} ${selectedTime}` : time;
             if (!from || !to || !timeVal || !seats) return;
-            await fetch('http://127.0.0.1:8000/create-ride', {
+            await fetch(`${API_URL}/create-ride`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -442,7 +445,7 @@ export default function HomeScreen() {
                       ride.join_requests.some(req => req.passenger_name === name)
                     }
                     onPress={async () => {
-                      await fetch(`http://127.0.0.1:8000/join-ride/${ride.ride_id}`, {
+                      await fetch(`${API_URL}/join-ride/${ride.ride_id}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -451,7 +454,7 @@ export default function HomeScreen() {
                           passenger_mobile: mobile,
                         }),
                       });
-                      const res = await fetch('http://127.0.0.1:8000/rides');
+                      const res = await fetch(`${API_URL}/rides`);
                       setRides(await res.json());
                     }}
                   />
@@ -481,7 +484,7 @@ export default function HomeScreen() {
                               <TouchableOpacity
                                 style={styles.smallAction}
                                 onPress={async () => {
-                                  await fetch(`http://127.0.0.1:8000/handle-request/${ride.ride_id}`, {
+                                  await fetch(`${API_URL}/handle-request/${ride.ride_id}`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
@@ -489,7 +492,7 @@ export default function HomeScreen() {
                                       action: 'accept',
                                     }),
                                   });
-                                  const res = await fetch('http://127.0.0.1:8000/rides');
+                                  const res = await fetch(`${API_URL}/rides`);
                                   setRides(await res.json());
                                 }}
                               >
@@ -499,7 +502,7 @@ export default function HomeScreen() {
                               <TouchableOpacity
                                 style={[styles.smallAction, { backgroundColor: '#d9534f' }]}
                                 onPress={async () => {
-                                  await fetch(`http://127.0.0.1:8000/handle-request/${ride.ride_id}`, {
+                                  await fetch(`${API_URL}/handle-request/${ride.ride_id}`, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
@@ -507,7 +510,7 @@ export default function HomeScreen() {
                                       action: 'reject',
                                     }),
                                   });
-                                  const res = await fetch('http://127.0.0.1:8000/rides');
+                                  const res = await fetch(`${API_URL}/rides`);
                                   setRides(await res.json());
                                 }}
                               >
