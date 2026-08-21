@@ -1,4 +1,4 @@
-import { useState ,useEffect} from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,11 @@ import {
   ScrollView,
   ImageBackground,
   TouchableOpacity,
-  Modal,
   Platform,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { canLogin, findUser, registerUser } from '../../services/authLogic';
 
 type JoinRequest = {
   passenger_name: string;
@@ -48,9 +49,16 @@ export default function HomeScreen() {
   const [today, setToday] = useState(new Date());
   const [role, setRole] = useState<Role | ''>('');
   const [isSignUp, setIsSignUp] = useState(false);
-  const [showDateModal, setShowDateModal] = useState(false);
+  const [registeredUsers, setRegisteredUsers] = useState<Array<{ name: string; email: string; mobile: string; role: string }>>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
+  const [datePickerMode, setDatePickerMode] = useState<'date' | 'time' | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [showYearList, setShowYearList] = useState(false);
+  const [timeHour, setTimeHour] = useState(4);
+  const [timeMinute, setTimeMinute] = useState(30);
+  const [timeMeridiem, setTimeMeridiem] = useState<'AM' | 'PM'>('AM');
   const [showAcceptedFor, setShowAcceptedFor] = useState<number | null>(null);
   const [showRejectedFor, setShowRejectedFor] = useState<number | null>(null);
   const fetchRides = async () => {
@@ -77,78 +85,200 @@ export default function HomeScreen() {
     setToday(new Date());
   }, []);
 
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const dayNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  const clockNumbers = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  const minuteSteps = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+
+  const parseSelectedTime = (timeValue: string): { hour: number; minute: number; meridiem: 'AM' | 'PM' } => {
+    if (!timeValue) {
+      return { hour: 4, minute: 30, meridiem: 'AM' };
+    }
+
+    const [rawHour, rawMinute] = timeValue.split(':');
+    const hourValue = Number(rawHour);
+    const minuteValue = Number(rawMinute);
+    const meridiem: 'AM' | 'PM' = hourValue >= 12 ? 'PM' : 'AM';
+    const normalizedHour = hourValue % 12 === 0 ? 12 : hourValue % 12;
+
+    return {
+      hour: normalizedHour,
+      minute: minuteValue,
+      meridiem,
+    };
+  };
+
+  const openDatePicker = () => {
+    const baseDate = selectedDate ? new Date(`${selectedDate}T12:00:00`) : new Date();
+    setCalendarMonth(baseDate.getMonth());
+    setCalendarYear(baseDate.getFullYear());
+    setShowYearList(false);
+    setDatePickerMode('date');
+  };
+
+  const openTimePicker = () => {
+    const parsed = parseSelectedTime(selectedTime);
+    setTimeHour(parsed.hour);
+    setTimeMinute(parsed.minute);
+    setTimeMeridiem(parsed.meridiem);
+    setDatePickerMode('time');
+  };
+
+  const formatLocalDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   let content = null;
+
+  const getUserByNameAndEmail = (userName: string, userEmail: string) => findUser(registeredUsers, userName, userEmail);
+
+  const handleAuthSubmit = () => {
+    const cleanedName = name.trim();
+    const cleanedEmail = email.trim();
+    const cleanedMobile = mobile.trim();
+
+    if (!cleanedName || !cleanedEmail) {
+      setError('Name and email are required.');
+      return;
+    }
+
+    if (isSignUp) {
+      if (!cleanedMobile || !role) {
+        setError('Mobile number and role are required to create an account.');
+        return;
+      }
+
+      const duplicateUser = findUser(registeredUsers, cleanedName, cleanedEmail);
+      if (duplicateUser) {
+        setError('This name and email are already registered. Please login instead.');
+        return;
+      }
+
+      const nextUsers = registerUser(registeredUsers, {
+        name: cleanedName,
+        email: cleanedEmail,
+        mobile: cleanedMobile,
+        role,
+      });
+
+      if (nextUsers.length === registeredUsers.length) {
+        setError('This account could not be created. Please try again.');
+        return;
+      }
+
+      setRegisteredUsers(nextUsers);
+      setError('');
+      setIsSignUp(false);
+      setRole('');
+      setEmail('');
+      setMobile('');
+      setName(cleanedName);
+      return;
+    }
+
+    if (!role) {
+      setError('Please select your role before logging in.');
+      return;
+    }
+
+    const existingUser = getUserByNameAndEmail(cleanedName, cleanedEmail);
+    if (!existingUser) {
+      setError('No matching account found for this name and email. Please sign up first.');
+      return;
+    }
+
+    if (existingUser.role !== role) {
+      setError(`This email is registered as a ${existingUser.role}.`);
+      return;
+    }
+
+    setError('');
+    setEmail(existingUser.email);
+    setMobile(existingUser.mobile);
+    setScreen('home');
+  };
 
   /* ---------------- LOGIN ---------------- */
   if (screen === 'login') {
     content = (
       <View style={styles.card}>
         <View style={styles.contentContainer}>
-        <Text style={styles.title}>Carpool Coordinator</Text>
-        <Text style={styles.subtitle}>{isSignUp ? 'Create a new account' : 'Login to continue'}</Text>
-        <View style={styles.authToggleRow}>
-          <TouchableOpacity
-            style={[styles.authToggle, !isSignUp && styles.authToggleActive]}
-            onPress={() => setIsSignUp(false)}
-          >
-            <Text style={[styles.authToggleText, !isSignUp && styles.authToggleTextActive]}>Login</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.authToggle, isSignUp && styles.authToggleActive]}
-            onPress={() => setIsSignUp(true)}
-          >
-            <Text style={[styles.authToggleText, isSignUp && styles.authToggleTextActive]}>Sign Up</Text>
-          </TouchableOpacity>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="Name"
-          value={name}
-          onChangeText={setName}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Mobile Number"
-          value={mobile}
-          onChangeText={setMobile}
-          keyboardType="phone-pad"
-        />
-        <Text style={{ marginBottom: 8 }}>Select Role:</Text>
-        <View style={styles.roleRow}>
-          <TouchableOpacity
-            onPress={() => setRole('driver')}
-            style={[styles.roleButton, role === 'driver' && styles.roleButtonActive]}
-          >
-            <Text style={[styles.roleText, role === 'driver' && styles.roleTextActive]}>DRIVER</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setRole('passenger')}
-            style={[styles.roleButton, role === 'passenger' && styles.roleButtonActive]}
-          >
-            <Text style={[styles.roleText, role === 'passenger' && styles.roleTextActive]}>PASSENGER</Text>
-          </TouchableOpacity>
-        </View>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <View style={{ width: '100%' }}>
-          <Button
-            title={isSignUp ? 'Sign Up' : 'Login'}
-            onPress={() => {
-              if (!name || !email || !mobile || !role) {
-                setError('All fields including role are required');
-                return;
-              }
-              setError('');
-              setScreen('home');
-            }}
+          <Text style={styles.title}>Carpool Coordinator</Text>
+          <Text style={styles.subtitle}>{isSignUp ? 'Create a new account' : 'Login to continue'}</Text>
+          <View style={styles.authToggleRow}>
+            <TouchableOpacity
+              style={[styles.authToggle, !isSignUp && styles.authToggleActive]}
+              onPress={() => {
+                setIsSignUp(false);
+                setError('');
+              }}
+            >
+              <Text style={[styles.authToggleText, !isSignUp && styles.authToggleTextActive]}>Login</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.authToggle, isSignUp && styles.authToggleActive]}
+              onPress={() => {
+                setIsSignUp(true);
+                setError('');
+              }}
+            >
+              <Text style={[styles.authToggleText, isSignUp && styles.authToggleTextActive]}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Name"
+            value={name}
+            onChangeText={setName}
           />
+
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+
+          {isSignUp && (
+            <TextInput
+              style={styles.input}
+              placeholder="Mobile Number"
+              value={mobile}
+              onChangeText={setMobile}
+              keyboardType="phone-pad"
+            />
+          )}
+
+          <Text style={{ marginBottom: 8 }}>Select Role:</Text>
+          <View style={styles.roleRow}>
+            <TouchableOpacity
+              onPress={() => setRole('driver')}
+              style={[styles.roleButton, role === 'driver' && styles.roleButtonActive]}
+            >
+              <Text style={[styles.roleText, role === 'driver' && styles.roleTextActive]}>DRIVER</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setRole('passenger')}
+              style={[styles.roleButton, role === 'passenger' && styles.roleButtonActive]}
+            >
+              <Text style={[styles.roleText, role === 'passenger' && styles.roleTextActive]}>PASSENGER</Text>
+            </TouchableOpacity>
+          </View>
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <View style={{ width: '100%' }}>
+            <Button
+              title={isSignUp ? 'Sign Up' : 'Login'}
+              onPress={handleAuthSubmit}
+            />
+          </View>
         </View>
-      </View>
       </View>
     );
   }
@@ -205,15 +335,28 @@ export default function HomeScreen() {
           value={to}
           onChangeText={setTo}
         />
-        <View style={{ width: '100%', marginBottom: 12, alignItems: 'flex-start' }}>
+        <View style={styles.fieldStack}>
           <TouchableOpacity
-            style={styles.datePickerButton}
-            onPress={() => setShowDateModal(true)}
+            style={styles.fieldWithIcon}
+            onPress={openDatePicker}
           >
-            <Ionicons name="calendar-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.datePickerText}>{selectedDate && selectedTime ? `${selectedDate} ${selectedTime}` : 'Select date & time'}</Text>
+            <Text style={[styles.fieldWithIconText, !selectedDate && styles.fieldPlaceholderText]}>
+              {selectedDate || 'Date'}
+            </Text>
+            <Ionicons name="calendar-outline" size={20} color="#2b9cff" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.fieldWithIcon}
+            onPress={openTimePicker}
+          >
+            <Text style={[styles.fieldWithIconText, !selectedTime && styles.fieldPlaceholderText]}>
+              {selectedTime || 'Time'}
+            </Text>
+            <Ionicons name="time-outline" size={20} color="#2b9cff" />
           </TouchableOpacity>
         </View>
+
         <TextInput
           style={styles.input}
           placeholder="Seats"
@@ -464,68 +607,46 @@ export default function HomeScreen() {
       </View>
     );
   }
-  // Date/time chooser modal (simple, UI-only)
-  const nextNDates = (n: number) => {
-    const arr: string[] = [];
-    const base = new Date();
-    for (let i = 0; i < n; i++) {
-      const d = new Date(base);
-      d.setDate(base.getDate() + i);
-      arr.push(d.toISOString().slice(0, 10));
+  const getCalendarDays = () => {
+    const firstDate = new Date(calendarYear, calendarMonth, 1);
+    const firstDayIndex = firstDate.getDay();
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const previousMonthDays = new Date(calendarYear, calendarMonth, 0).getDate();
+
+    const cells: Array<{ day: number; inCurrentMonth: boolean }> = [];
+
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      cells.push({ day: previousMonthDays - i, inCurrentMonth: false });
     }
-    return arr;
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      cells.push({ day, inCurrentMonth: true });
+    }
+
+    while (cells.length % 7 !== 0) {
+      const nextDay = cells.length - (daysInMonth + firstDayIndex) + 1;
+      cells.push({ day: nextDay, inCurrentMonth: false });
+    }
+
+    return cells;
   };
 
-  const timeSlots = () => {
-    const slots: string[] = [];
-    for (let h = 6; h <= 22; h++) {
-      slots.push((h < 10 ? '0' + h : h) + ':00');
-      slots.push((h < 10 ? '0' + h : h) + ':30');
-    }
-    return slots;
+  const dateCells = getCalendarDays();
+  const yearOptions = Array.from({ length: 13 }, (_, idx) => calendarYear - 6 + idx);
+
+  const handleDateSelection = (dateValue: string) => {
+    setSelectedDate(dateValue);
+    setDatePickerMode(null);
   };
 
-  const DateTimeModal = (
-    <Modal visible={showDateModal} transparent animationType="slide">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
-          <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>Select Date</Text>
-          <ScrollView style={{ maxHeight: 140, marginBottom: 8 }}>
-            {nextNDates(21).map((d) => (
-              <TouchableOpacity
-                key={d}
-                style={[styles.dateOption, selectedDate === d && styles.dateOptionActive]}
-                onPress={() => setSelectedDate(d)}
-              >
-                <Text style={selectedDate === d ? { color: '#fff' } : {}}>{d}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>Select Time</Text>
-          <ScrollView style={{ maxHeight: 120, marginBottom: 12 }}>
-            {timeSlots().map((t) => (
-              <TouchableOpacity
-                key={t}
-                style={[styles.dateOption, selectedTime === t && styles.dateOptionActive]}
-                onPress={() => setSelectedTime(t)}
-              >
-                <Text style={selectedTime === t ? { color: '#fff' } : {}}>{t}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
-            <Button title="Cancel" onPress={() => setShowDateModal(false)} />
-            <Button
-              title="Confirm"
-              onPress={() => {
-                if (selectedDate && selectedTime) setShowDateModal(false);
-              }}
-            />
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
+  const handleTimeCommit = () => {
+    const hour24 = timeMeridiem === 'AM'
+      ? (timeHour === 12 ? 0 : timeHour)
+      : (timeHour === 12 ? 12 : timeHour + 12);
+
+    setSelectedTime(`${String(hour24).padStart(2, '0')}:${String(timeMinute).padStart(2, '0')}`);
+    setDatePickerMode(null);
+  };
 
   return (
     <ImageBackground
@@ -534,7 +655,170 @@ export default function HomeScreen() {
       resizeMode="cover"
     >
       <View style={styles.overlay}>
-        {DateTimeModal}
+        <Modal visible={Boolean(datePickerMode)} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            {datePickerMode === 'date' ? (
+              <View style={styles.calendarSheet}>
+                <View style={styles.calendarHeader}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (calendarMonth === 0) {
+                        setCalendarMonth(11);
+                        setCalendarYear((prev) => prev - 1);
+                      } else {
+                        setCalendarMonth((prev) => prev - 1);
+                      }
+                    }}
+                  >
+                    <Text style={styles.calendarNavText}>{'<'}</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity onPress={() => setShowYearList((prev) => !prev)}>
+                    <Text style={styles.calendarTitleText}>{monthNames[calendarMonth]} {calendarYear}</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (calendarMonth === 11) {
+                        setCalendarMonth(0);
+                        setCalendarYear((prev) => prev + 1);
+                      } else {
+                        setCalendarMonth((prev) => prev + 1);
+                      }
+                    }}
+                  >
+                    <Text style={styles.calendarNavText}>{'>'}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {showYearList ? (
+                  <View style={styles.yearListWrap}>
+                    {yearOptions.map((year) => (
+                      <TouchableOpacity
+                        key={year}
+                        style={[styles.yearOption, year === calendarYear && styles.yearOptionActive]}
+                        onPress={() => {
+                          setCalendarYear(year);
+                          setShowYearList(false);
+                        }}
+                      >
+                        <Text style={[styles.yearOptionText, year === calendarYear && styles.yearOptionTextActive]}>{year}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.weekRow}>
+                      {dayNames.map((day) => (
+                        <Text key={day} style={styles.weekDayText}>{day}</Text>
+                      ))}
+                    </View>
+
+                    <View style={styles.calendarGrid}>
+                      {dateCells.map((cell, idx) => {
+                        const cellDate = new Date(calendarYear, calendarMonth, cell.day);
+                        const cellValue = formatLocalDate(cellDate);
+                        const isSelected = cell.inCurrentMonth && selectedDate
+                          ? selectedDate === cellValue
+                          : false;
+
+                        return (
+                          <TouchableOpacity
+                            key={`${cell.day}-${idx}`}
+                            style={[
+                              styles.dateCell,
+                              !cell.inCurrentMonth && styles.dateCellMuted,
+                              isSelected && styles.dateCellSelected,
+                            ]}
+                            onPress={() => {
+                              if (!cell.inCurrentMonth) return;
+                              const value = formatLocalDate(cellDate);
+                              handleDateSelection(value);
+                            }}
+                          >
+                            <Text style={[styles.dateCellText, isSelected && styles.dateCellTextSelected]}>{cell.day}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </>
+                )}
+
+                <TouchableOpacity style={styles.calendarOkButton} onPress={() => setDatePickerMode(null)}>
+                  <Text style={styles.calendarOkText}>Ok</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.timeSheet}>
+                <Text style={styles.timeSheetTitle}>Select time</Text>
+
+                <View style={styles.timeDisplayRow}>
+                  <Text style={styles.timeDisplayText}>{String(timeHour).padStart(2, '0')}</Text>
+                  <Text style={styles.timeSeparatorText}>:</Text>
+                  <Text style={styles.timeDisplayText}>{String(timeMinute).padStart(2, '0')}</Text>
+                  <View style={styles.meridiemGroup}>
+                    <TouchableOpacity
+                      style={[styles.meridiemButton, timeMeridiem === 'AM' && styles.meridiemButtonActive]}
+                      onPress={() => setTimeMeridiem('AM')}
+                    >
+                      <Text style={[styles.meridiemText, timeMeridiem === 'AM' && styles.meridiemTextActive]}>a.m.</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.meridiemButton, timeMeridiem === 'PM' && styles.meridiemButtonActive]}
+                      onPress={() => setTimeMeridiem('PM')}
+                    >
+                      <Text style={[styles.meridiemText, timeMeridiem === 'PM' && styles.meridiemTextActive]}>p.m.</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.clockFaceWrap}>
+                  <View style={styles.clockFace}>
+                    {clockNumbers.map((value, index) => {
+                      const angle = index * 30 - 90;
+                      const radius = 105;
+                      const x = 120 + Math.cos((angle * Math.PI) / 180) * radius;
+                      const y = 120 + Math.sin((angle * Math.PI) / 180) * radius;
+
+                      return (
+                        <TouchableOpacity
+                          key={value}
+                          style={[styles.clockNumber, { left: x - 14, top: y - 14 }, timeHour === value && styles.clockNumberActive]}
+                          onPress={() => setTimeHour(value)}
+                        >
+                          <Text style={[styles.clockNumberText, timeHour === value && styles.clockNumberTextActive]}>{value}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    <View style={styles.clockCenter} />
+                    <View
+                      style={[
+                        styles.clockHand,
+                        { transform: [{ rotate: `${(timeHour % 12) * 30}deg` }] },
+                      ]}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.minuteRow}>
+                  {minuteSteps.map((minute) => (
+                    <TouchableOpacity
+                      key={minute}
+                      style={[styles.minuteButton, timeMinute === minute && styles.minuteButtonActive]}
+                      onPress={() => setTimeMinute(minute)}
+                    >
+                      <Text style={[styles.minuteButtonText, timeMinute === minute && styles.minuteButtonTextActive]}>{String(minute).padStart(2, '0')}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <TouchableOpacity style={styles.timeDoneButton} onPress={handleTimeCommit}>
+                  <Text style={styles.timeDoneText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </Modal>
         {content}
       </View>
     </ImageBackground>
@@ -661,17 +945,285 @@ const styles = StyleSheet.create({
   roleTextActive: {
     color: '#fff',
   },
-  datePickerButton: {
+  fieldStack: {
+    width: '100%',
+    gap: 12,
+    marginBottom: 12,
+  },
+  fieldWithIcon: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2b9cff',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    justifyContent: 'space-between',
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#d9d9d9',
     borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
   },
-  datePickerText: {
-    color: '#fff',
+  fieldWithIconText: {
+    flex: 1,
+    color: '#1f1f1f',
+    fontSize: 15,
+  },
+  fieldPlaceholderText: {
+    color: '#9aa0a6',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  calendarSheet: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 18,
+    alignItems: 'center',
+  },
+  calendarHeader: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  calendarNavText: {
+    fontSize: 28,
+    color: '#333',
     fontWeight: '600',
+  },
+  calendarTitleText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1f1f1f',
+  },
+  weekRow: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  weekDayText: {
+    width: 32,
+    textAlign: 'center',
+    color: '#666',
+    fontWeight: '600',
+  },
+  calendarGrid: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  dateCell: {
+    width: '14.28%',
+    height: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    marginVertical: 2,
+  },
+  dateCellMuted: {
+    opacity: 0.35,
+  },
+  dateCellSelected: {
+    backgroundColor: '#2b9cff',
+  },
+  dateCellText: {
+    color: '#333',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  dateCellTextSelected: {
+    color: '#fff',
+  },
+  yearListWrap: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginVertical: 8,
+  },
+  yearOption: {
+    width: '30%',
+    paddingVertical: 10,
+    marginBottom: 8,
+    borderRadius: 8,
+    backgroundColor: '#f1f1f1',
+    alignItems: 'center',
+  },
+  yearOptionActive: {
+    backgroundColor: '#2b9cff',
+  },
+  yearOptionText: {
+    color: '#333',
+    fontWeight: '600',
+  },
+  yearOptionTextActive: {
+    color: '#fff',
+  },
+  calendarOkButton: {
+    marginTop: 14,
+    width: '100%',
+    backgroundColor: '#9a9a9a',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  calendarOkText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  timeSheet: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#2c2724',
+    borderRadius: 18,
+    padding: 18,
+    alignItems: 'center',
+  },
+  timeSheetTitle: {
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+    color: '#f5f5f5',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  timeDisplayRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  timeDisplayText: {
+    color: '#fff',
+    fontSize: 48,
+    fontWeight: '600',
+    lineHeight: 52,
+  },
+  timeSeparatorText: {
+    color: '#fff',
+    fontSize: 44,
+    fontWeight: '500',
+    marginHorizontal: 8,
+  },
+  meridiemGroup: {
+    flexDirection: 'row',
+    marginLeft: 16,
+    backgroundColor: '#4a423d',
+    borderRadius: 24,
+    padding: 4,
+  },
+  meridiemButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 18,
+  },
+  meridiemButtonActive: {
+    backgroundColor: '#d5d5d5',
+  },
+  meridiemText: {
+    color: '#d8d8d8',
+    fontWeight: '600',
+  },
+  meridiemTextActive: {
+    color: '#2c2724',
+  },
+  clockFaceWrap: {
+    width: 260,
+    height: 260,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  clockFace: {
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: '#3b3532',
+    position: 'relative',
+  },
+  clockNumber: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clockNumberActive: {
+    backgroundColor: '#f2a47a',
+  },
+  clockNumberText: {
+    color: '#f4f4f4',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  clockNumberTextActive: {
+    color: '#2c2724',
+  },
+  clockCenter: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    backgroundColor: '#f2a47a',
+    borderRadius: 8,
+    left: 112,
+    top: 112,
+  },
+  clockHand: {
+    position: 'absolute',
+    width: 4,
+    height: 80,
+    left: 118,
+    top: 44,
+    backgroundColor: '#f2a47a',
+    borderRadius: 4,
+  },
+  minuteRow: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  minuteButton: {
+    width: 44,
+    height: 32,
+    backgroundColor: '#ddd',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  minuteButtonActive: {
+    backgroundColor: '#f2a47a',
+  },
+  minuteButtonText: {
+    color: '#333',
+    fontWeight: '700',
+  },
+  minuteButtonTextActive: {
+    color: '#2c2724',
+  },
+  timeDoneButton: {
+    width: '100%',
+    backgroundColor: '#e3e3e3',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  timeDoneText: {
+    color: '#2c2724',
+    fontWeight: '700',
+    fontSize: 16,
   },
   smallAction: {
     backgroundColor: '#28a745',
@@ -679,28 +1231,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 6,
     alignItems: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalCard: {
-    width: 340,
-    maxHeight: '80%',
-    backgroundColor: '#fff',
-    padding: 14,
-    borderRadius: 10,
-  },
-  dateOption: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-    backgroundColor: '#f4f4f4',
-    marginBottom: 6,
-  },
-  dateOptionActive: {
-    backgroundColor: '#2b9cff',
   },
 });
